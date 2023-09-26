@@ -6,8 +6,6 @@ import Control.Applicative
 import Control.Arrow
 import Control.Monad
 import Control.Monad.ST
-import Data.ListLike (ListLike)
-import qualified Data.ListLike as ListLike
 import Data.STRef
 import Data.Text (Text)
 import Text.Earley.Grammar
@@ -216,7 +214,6 @@ data ParseEnv s i t a = ParseEnv
     input :: !i
   }
 
-{-# INLINE emptyParseEnv #-}
 emptyParseEnv :: i -> ParseEnv s i t a
 emptyParseEnv i =
   ParseEnv
@@ -227,20 +224,14 @@ emptyParseEnv i =
       curPos = 0,
       input = i
     }
-
-{-# SPECIALIZE parse ::
-  [State s a t a] ->
-  ParseEnv s [t] t a ->
-  ST s (Result s [t] a)
-  #-}
+{-# INLINE emptyParseEnv #-}
 
 -- | The internal parsing routine
 parse ::
-  (ListLike i t) =>
   -- | States to process at this position
   [State s a t a] ->
-  ParseEnv s i t a ->
-  ST s (Result s i a)
+  ParseEnv s [t] t a ->
+  ST s (Result s [t] a)
 parse [] env@ParseEnv {results = [], next = []} = do
   reset env
   return $
@@ -254,7 +245,7 @@ parse [] env@ParseEnv {results = []} = do
   reset env
   parse
     (next env)
-    (emptyParseEnv $ ListLike.drop 1 $ input env) {curPos = curPos env + 1}
+    (emptyParseEnv $ drop 1 $ input env) {curPos = curPos env + 1}
 parse [] env = do
   reset env
   return $
@@ -263,7 +254,7 @@ parse [] env = do
 parse (st : ss) env = case st of
   Final res -> parse ss env {results = unResults res : results env}
   State pr args pos scont -> case pr of
-    Terminal f p -> case ListLike.uncons (input env) >>= f . fst of
+    Terminal f p -> case uncons (input env) >>= f . fst of
       Just a ->
         parse
           ss
@@ -330,19 +321,23 @@ parse (st : ss) env = case st of
         (State pr' args pos scont : ss)
         env {names = n : names env}
 
-type Parser i a = forall s. i -> ST s (Result s i a)
+uncons :: [a] -> Maybe (a, [a])
+uncons xs =
+  case xs of
+    [] -> Nothing
+    y : ys -> Just (y, ys)
 
-{-# INLINE parser #-}
+type Parser i a = forall s. i -> ST s (Result s i a)
 
 -- | Create a parser from the given grammar.
 parser ::
-  (ListLike i t) =>
   (forall r. Grammar r (Prod r t a)) ->
-  Parser i a
+  Parser [t] a
 parser g i = do
   let nt x = NonTerminal x $ pure id
   s <- initialState =<< runGrammar (fmap nt . mkRule) g
   parse [s] $ emptyParseEnv i
+{-# INLINE parser #-}
 
 -- | Return all parses from the result of a given parser. The result may
 -- contain partial parses. The 'Int's are the position at which a result was
@@ -364,29 +359,25 @@ allParses p i = runST $ p i >>= go
         as <- mas
         fmap (first (map (,cpos) as ++)) $ go =<< k
 
-{-# INLINE fullParses #-}
-
 -- | Return all parses that reached the end of the input from the result of a
 -- given parser.
 --
 -- If there are multiple results they are returned in an unspecified order.
 fullParses ::
-  (ListLike i t) =>
-  Parser i a ->
-  i ->
-  ([a], Report i)
+  Parser [t] a ->
+  [t] ->
+  ([a], Report [t])
 fullParses p i = runST $ p i >>= go
   where
-    go :: (ListLike i t) => Result s i a -> ST s ([a], Report i)
+    go :: Result s [t] a -> ST s ([a], Report [t])
     go r = case r of
       Ended rep -> return ([], rep)
       Parsed mas _ i' k
-        | ListLike.null i' -> do
+        | null i' -> do
             as <- mas
             fmap (first (as ++)) $ go =<< k
         | otherwise -> go =<< k
-
-{-# INLINE report #-}
+{-# INLINE fullParses #-}
 
 -- | See e.g. how far the parser is able to parse the input string before it
 -- fails.  This can be much faster than getting the parse results for highly
@@ -401,3 +392,4 @@ report p i = runST $ p i >>= go
     go r = case r of
       Ended rep -> return rep
       Parsed _ _ _ k -> go =<< k
+{-# INLINE report #-}

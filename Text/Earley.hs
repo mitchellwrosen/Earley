@@ -12,7 +12,6 @@ module Text.Earley
     token,
     anyToken,
     list,
-    listLike,
     matches,
 
     -- * Parsing

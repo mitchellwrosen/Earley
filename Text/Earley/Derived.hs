@@ -2,8 +2,6 @@
 module Text.Earley.Derived where
 
 import Control.Monad (guard)
-import Data.ListLike (ListLike)
-import qualified Data.ListLike as ListLike
 import Text.Earley.Grammar
 import Text.Earley.Parser
 
@@ -24,14 +22,9 @@ anyToken = terminal Just
 -- | Match a list of tokens in sequence.
 {-# INLINE list #-}
 list :: (Eq t) => [t] -> Prod r t [t]
-list = listLike
-
--- | Match a 'ListLike' of tokens in sequence.
-{-# INLINE listLike #-}
-listLike :: (Eq t, ListLike i t) => i -> Prod r t i
-listLike = ListLike.foldr ((\x y -> ListLike.cons <$> x <*> y) . satisfy . (==)) (pure ListLike.empty)
+list = foldr ((\x y -> (:) <$> x <*> y) . satisfy . (==)) (pure [])
 
 -- | Whether or not the grammar matches the input string. Equivalently,
 -- whether the given input is in the language described by the grammars.
-matches :: (ListLike i t) => (forall r. Grammar r (Prod r t a)) -> i -> Bool
+matches :: (forall r. Grammar r (Prod r t a)) -> [t] -> Bool
 matches grammar = not . null . fst . fullParses (parser grammar)
