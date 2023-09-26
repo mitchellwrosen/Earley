@@ -7,22 +7,22 @@ import Text.Earley.Parser
 
 -- | Match a token that satisfies the given predicate. Returns the matched
 -- token. See also 'terminal'.
-satisfy :: (a -> Bool) -> Prod r a a
-satisfy p = terminal ((<$) <*> guard . p)
 {-# INLINE satisfy #-}
+satisfy :: (t -> Bool) -> Prod r t t
+satisfy p = terminal ((<$) <*> guard . p)
 
 -- | Match a single token.
-token :: (Eq a) => a -> Prod r a a
+token :: (Eq t) => t -> Prod r t t
 token x = satisfy (== x)
 
 -- | Match a single token with any value
-anyToken :: Prod r a a
+anyToken :: Prod r t t
 anyToken = terminal Just
 
 -- | Match a list of tokens in sequence.
-list :: (Eq a) => [a] -> Prod r a [a]
-list = foldr ((\x y -> (:) <$> x <*> y) . satisfy . (==)) (pure [])
 {-# INLINE list #-}
+list :: (Eq t) => [t] -> Prod r t [t]
+list = foldr ((\x y -> (:) <$> x <*> y) . satisfy . (==)) (pure [])
 
 -- | Whether or not the grammar matches the input string. Equivalently,
 -- whether the given input is in the language described by the grammars.
