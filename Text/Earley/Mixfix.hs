@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecursiveDo #-}
+{-# LANGUAGE RecursiveDo #-}
 module Text.Earley.Mixfix
   ( Associativity(..)
   , Holey
@@ -6,10 +6,6 @@ module Text.Earley.Mixfix
   , mixfixExpressionSeparate
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-import Data.Traversable(sequenceA)
-#endif
 import Data.Either
 import Data.Foldable(asum, foldrM)
 import Text.Earley

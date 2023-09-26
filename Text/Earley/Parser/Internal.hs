@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, BangPatterns, DeriveFunctor, GADTs, TupleSections, Rank2Types, RecursiveDo #-}
+{-# LANGUAGE BangPatterns, DeriveFunctor, GADTs, TupleSections, Rank2Types, RecursiveDo #-}
 -- | This module exposes the internals of the package: its API may change
 -- independently of the PVP-compliant version number.
 module Text.Earley.Parser.Internal where
@@ -10,9 +10,6 @@ import Data.ListLike(ListLike)
 import qualified Data.ListLike as ListLike
 import Data.STRef
 import Text.Earley.Grammar
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif
 import Data.Semigroup
 
 -------------------------------------------------------------------------------

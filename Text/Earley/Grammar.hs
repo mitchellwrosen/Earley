@@ -1,5 +1,5 @@
 -- | Context-free grammars.
-{-# LANGUAGE CPP, GADTs, RankNTypes #-}
+{-# LANGUAGE GADTs, RankNTypes #-}
 module Text.Earley.Grammar
   ( Prod(..)
   , terminal
@@ -14,9 +14,6 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Fix
 import Data.String (IsString(..))
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif
 import Data.Semigroup
 
 infixr 0 <?>

@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, BangPatterns, DeriveFunctor, GADTs, Rank2Types, RecursiveDo #-}
+{-# LANGUAGE BangPatterns, DeriveFunctor, GADTs, Rank2Types, RecursiveDo #-}
 -- | This module exposes the internals of the package: its API may change
 -- independently of the PVP-compliant version number.
 module Text.Earley.Generator.Internal where
@@ -8,9 +8,6 @@ import Control.Monad.ST.Lazy
 import Data.Maybe(mapMaybe)
 import Data.STRef.Lazy
 import Text.Earley.Grammar
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif
 import Data.Semigroup
 
 -------------------------------------------------------------------------------
