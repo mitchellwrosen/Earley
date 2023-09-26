@@ -44,15 +44,24 @@ library
     text ^>= 2.0 || ^>= 2.1,
   default-extensions:
     BangPatterns
+    BlockArguments
     DeriveFunctor
+    DerivingStrategies
     GADTs
+    InstanceSigs
+    LambdaCase
+    NamedFieldPuns
     RankNTypes
     RecursiveDo
+    ScopedTypeVariables
     TupleSections
+    TypeApplications
     TypeOperators
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -funbox-strict-fields
+  other-modules:
+    Text.Earley.Results
 
 executable earley-english
   if !flag(examples)

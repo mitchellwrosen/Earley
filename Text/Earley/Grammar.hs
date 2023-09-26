@@ -54,7 +54,7 @@ data Prod r t a where
 -- | Match a token for which the given predicate returns @Just a@,
 -- and return the @a@.
 terminal :: (t -> Maybe a) -> Prod r t a
-terminal p = Terminal p $ Pure id
+terminal p = Terminal p (Pure id)
 
 -- | A named production (used for reporting expected things).
 (<?>) :: Prod r t a -> Text -> Prod r t a
@@ -70,13 +70,13 @@ instance (Monoid a) => Monoid (Prod r t a) where
   mappend = (<>)
 
 instance Functor (Prod r t) where
-  {-# INLINE fmap #-}
   fmap f (Terminal b p) = Terminal b $ fmap (f .) p
   fmap f (NonTerminal r p) = NonTerminal r $ fmap (f .) p
   fmap f (Pure x) = Pure $ f x
   fmap f (Alts as p) = Alts as $ fmap (f .) p
   fmap f (Many p q) = Many p $ fmap (f .) q
   fmap f (Named p n) = Named (fmap f p) n
+  {-# INLINE fmap #-}
 
 -- | Smart constructor for alternatives.
 alts :: [Prod r t a] -> Prod r t (a -> b) -> Prod r t b
@@ -158,11 +158,11 @@ instance Monad (Grammar r) where
   Return x >>= k = k x
 
 instance MonadFix (Grammar r) where
-  mfix f = FixBind f return
+  mfix f = FixBind f pure
 
 -- | Create a new non-terminal by giving its production.
 rule :: Prod r t a -> Grammar r (Prod r t a)
-rule p = RuleBind p return
+rule p = RuleBind p pure
 
 -- | Run a grammar, given an action to perform on productions to be turned into
 -- non-terminals.
@@ -171,11 +171,11 @@ runGrammar ::
   (forall t a. Prod r t a -> m (Prod r t a)) ->
   Grammar r b ->
   m b
-runGrammar r grammar = case grammar of
+runGrammar r = \case
   RuleBind p k -> do
     nt <- r p
     runGrammar r $ k nt
-  Return a -> return a
+  Return a -> pure a
   FixBind f k -> do
     a <- mfix $ runGrammar r <$> f
     runGrammar r $ k a
