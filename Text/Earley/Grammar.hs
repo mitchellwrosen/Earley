@@ -1,5 +1,5 @@
 -- | Context-free grammars.
-{-# LANGUAGE GADTs, RankNTypes #-}
+{-# LANGUAGE GADTs, RankNTypes, TypeOperators #-}
 module Text.Earley.Grammar
   ( Prod(..)
   , terminal
@@ -158,11 +158,10 @@ instance Functor (Grammar r) where
   fmap f (Return x)      = Return $ f x
 
 instance Applicative (Grammar r) where
-  pure  = return
+  pure  = Return
   (<*>) = ap
 
 instance Monad (Grammar r) where
-  return = Return
   RuleBind ps f >>= k = RuleBind ps (f >=> k)
   FixBind f g   >>= k = FixBind f (g >=> k)
   Return x      >>= k = k x

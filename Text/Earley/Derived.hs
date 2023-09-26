@@ -1,7 +1,6 @@
 {-# LANGUAGE Rank2Types #-}
 -- | Derived operators.
 module Text.Earley.Derived where
-import Control.Applicative hiding (many)
 import Control.Monad (guard)
 import Data.ListLike(ListLike)
 import qualified Data.ListLike as ListLike
@@ -35,7 +34,7 @@ list = listLike
 -- | Match a 'ListLike' of tokens in sequence.
 {-# INLINE listLike #-}
 listLike :: (Eq t, ListLike i t) => i -> Prod r e t i
-listLike = ListLike.foldr (liftA2 ListLike.cons . satisfy . (==)) (pure ListLike.empty)
+listLike = ListLike.foldr ((\x y -> ListLike.cons <$> x <*> y) . satisfy . (==)) (pure ListLike.empty)
 
 -- | Whether or not the grammar matches the input string. Equivalently,
 -- whether the given input is in the language described by the grammars.
