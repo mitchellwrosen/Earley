@@ -5,6 +5,7 @@ module Text.Earley.Generator.Internal where
 import Control.Applicative
 import Control.Monad
 import Control.Monad.ST.Lazy
+import Data.Coerce (coerce)
 import Data.Maybe (mapMaybe)
 import Data.STRef.Lazy
 import Text.Earley.Grammar
@@ -69,31 +70,19 @@ resetConts r = writeSTRef (ruleConts r) =<< newSTRef mempty
 
 -------------------------------------------------------------------------------
 
-data T a
-  = T0
-  | T1 a
-  | T2 !(T a) !(T a)
-
 newtype F t a
-  = F (a, T t)
+  = F (a, [t])
   deriving stock (Functor)
 
 instance Applicative (F t) where
-  pure x = F (x, T0)
+  pure x = F (x, [])
   (<*>) = ap
 
 instance Monad (F t) where
   return = pure
-  F (x, ts0) >>= f =
-    let F (y, ts1) = f x
-        !ts2 = combine ts0 ts1
-     in F (y, ts2)
-    where
-      combine tx ty =
-        case (tx, ty) of
-          (T0, _) -> ty
-          (_, T0) -> tx
-          _ -> T2 ty tx -- yes swapped, so tokens come out in the right order
+  F (x, ys) >>= f =
+    case f x of
+      F (y, zs) -> F (y, zs ++ ys)
 
 instance Foldable (F t) where
   foldr f z (F (x, _)) =
@@ -102,17 +91,6 @@ instance Foldable (F t) where
 instance Traversable (F t) where
   traverse f (F (x, ys)) =
     (\y -> F (y, ys)) <$> f x
-
-streamF :: F t a -> (a, [t])
-streamF (F (x, ts)) =
-  (x, streamTs [ts])
-
-streamTs :: [T a] -> [a]
-streamTs = \case
-  [] -> []
-  T0 : xs -> streamTs xs
-  T1 x : xs -> x : streamTs xs
-  T2 xs ys : zs -> streamTs (xs : ys : zs)
 
 -------------------------------------------------------------------------------
 
@@ -238,21 +216,14 @@ generate [] env = do
         emptyGenerationEnv $
           tokens env
 generate (st : ss) env = case st of
-  Final res -> generate ss env {results = (map streamF <$> unResults res) : results env}
+  Final res -> generate ss env {results = coerce (unResults res) : results env}
   State pr args pos scont -> case pr of
     Terminal f p ->
       generate
         ss
         env
           { next =
-              [ State
-                  p
-                  (\g -> Results (pure $ map (\(t, a) -> F (g a, T1 t)) xs) >>= args)
-                  Previous
-                  scont
-                | xs <- [mapMaybe (\t -> (,) t <$> f t) $ tokens env],
-                  not $ null xs
-              ]
+              [State p (\g -> Results (pure $ map (\(t, a) -> F (g a, [t])) xs) >>= args) Previous scont | xs <- [mapMaybe (\t -> (,) t <$> f t) $ tokens env], not $ null xs]
                 ++ next env
           }
     NonTerminal r p -> do
