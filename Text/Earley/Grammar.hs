@@ -15,6 +15,7 @@ import Control.Monad
 import Control.Monad.Fix
 import Data.Semigroup
 import Data.String (IsString (..))
+import Data.Text (Text)
 
 infixr 0 <?>
 
@@ -27,9 +28,6 @@ infixr 0 <?>
 -- @t@ for terminal: The type of the terminals that the production operates
 -- on.
 --
--- @e@ for expected: The type of names, used for example to report expected
--- tokens.
---
 -- @r@ for rule: The type of a non-terminal. This plays a role similar to the
 -- @s@ in the type @ST s a@.  Since the 'parser' function expects the @r@ to be
 -- universally quantified, there is not much to do with this parameter other
@@ -41,37 +39,37 @@ infixr 0 <?>
 --
 -- Most of the functionality of 'Prod's is obtained through its instances, e.g.
 -- 'Functor', 'Applicative', and 'Alternative'.
-data Prod r e t a where
+data Prod r t a where
   -- Applicative.
-  Terminal :: !(t -> Maybe a) -> !(Prod r e t (a -> b)) -> Prod r e t b
-  NonTerminal :: !(r e t a) -> !(Prod r e t (a -> b)) -> Prod r e t b
-  Pure :: a -> Prod r e t a
+  Terminal :: !(t -> Maybe a) -> !(Prod r t (a -> b)) -> Prod r t b
+  NonTerminal :: !(r t a) -> !(Prod r t (a -> b)) -> Prod r t b
+  Pure :: a -> Prod r t a
   -- Monoid/Alternative. We have to special-case 'many' (though it can be done
   -- with rules) to be able to satisfy the Alternative interface.
-  Alts :: ![Prod r e t a] -> !(Prod r e t (a -> b)) -> Prod r e t b
-  Many :: !(Prod r e t a) -> !(Prod r e t ([a] -> b)) -> Prod r e t b
+  Alts :: ![Prod r t a] -> !(Prod r t (a -> b)) -> Prod r t b
+  Many :: !(Prod r t a) -> !(Prod r t ([a] -> b)) -> Prod r t b
   -- Error reporting.
-  Named :: !(Prod r e t a) -> e -> Prod r e t a
+  Named :: !(Prod r t a) -> !Text -> Prod r t a
 
 -- | Match a token for which the given predicate returns @Just a@,
 -- and return the @a@.
-terminal :: (t -> Maybe a) -> Prod r e t a
+terminal :: (t -> Maybe a) -> Prod r t a
 terminal p = Terminal p $ Pure id
 
 -- | A named production (used for reporting expected things).
-(<?>) :: Prod r e t a -> e -> Prod r e t a
+(<?>) :: Prod r t a -> Text -> Prod r t a
 (<?>) = Named
 
 -- | Lifted instance: @(<>) = 'liftA2' ('<>')@
-instance (Semigroup a) => Semigroup (Prod r e t a) where
+instance (Semigroup a) => Semigroup (Prod r t a) where
   (<>) = liftA2 (Data.Semigroup.<>)
 
 -- | Lifted instance: @mempty = 'pure' 'mempty'@
-instance (Monoid a) => Monoid (Prod r e t a) where
+instance (Monoid a) => Monoid (Prod r t a) where
   mempty = pure mempty
   mappend = (<>)
 
-instance Functor (Prod r e t) where
+instance Functor (Prod r t) where
   {-# INLINE fmap #-}
   fmap f (Terminal b p) = Terminal b $ fmap (f .) p
   fmap f (NonTerminal r p) = NonTerminal r $ fmap (f .) p
@@ -81,7 +79,7 @@ instance Functor (Prod r e t) where
   fmap f (Named p n) = Named (fmap f p) n
 
 -- | Smart constructor for alternatives.
-alts :: [Prod r e t a] -> Prod r e t (a -> b) -> Prod r e t b
+alts :: [Prod r t a] -> Prod r t (a -> b) -> Prod r t b
 alts as p = case as >>= go of
   [] -> empty
   [a] -> a <**> p
@@ -92,7 +90,7 @@ alts as p = case as >>= go of
     go (Named p' n) = map (<?> n) $ go p'
     go a = [a]
 
-instance Applicative (Prod r e t) where
+instance Applicative (Prod r t) where
   pure = Pure
   {-# INLINE (<*>) #-}
   Terminal b p <*> q = Terminal b $ flip <$> p <*> q
@@ -102,7 +100,7 @@ instance Applicative (Prod r e t) where
   Many a p <*> q = Many a $ flip <$> p <*> q
   Named p n <*> q = Named (p <*> q) n
 
-instance Alternative (Prod r e t) where
+instance Alternative (Prod r t) where
   empty = Alts [] $ pure id
   Named p m <|> q = Named (p <|> q) m
   p <|> Named q n = Named (p <|> q) n
@@ -117,7 +115,7 @@ instance Alternative (Prod r e t) where
 -- >>> :set -XOverloadedStrings
 -- >>> import Data.Text (Text)
 -- >>> let determiner = "the" <|> "a" <|> "an" :: Prod r e Text Text
-instance (IsString t, Eq t, a ~ t) => IsString (Prod r e t a) where
+instance (IsString t, Eq t, a ~ t) => IsString (Prod r t a) where
   fromString s = Terminal f $ Pure id
     where
       fs = fromString s
@@ -141,7 +139,7 @@ instance (IsString t, Eq t, a ~ t) => IsString (Prod r e t a) where
 -- 'MonadFix': use @{-\# LANGUAGE RecursiveDo \#-}@ and @mdo@ instead of
 -- @do@.
 data Grammar r a where
-  RuleBind :: Prod r e t a -> (Prod r e t a -> Grammar r b) -> Grammar r b
+  RuleBind :: Prod r t a -> (Prod r t a -> Grammar r b) -> Grammar r b
   FixBind :: (a -> Grammar r a) -> (a -> Grammar r b) -> Grammar r b
   Return :: a -> Grammar r a
 
@@ -163,14 +161,14 @@ instance MonadFix (Grammar r) where
   mfix f = FixBind f return
 
 -- | Create a new non-terminal by giving its production.
-rule :: Prod r e t a -> Grammar r (Prod r e t a)
+rule :: Prod r t a -> Grammar r (Prod r t a)
 rule p = RuleBind p return
 
 -- | Run a grammar, given an action to perform on productions to be turned into
 -- non-terminals.
 runGrammar ::
   (MonadFix m) =>
-  (forall e t a. Prod r e t a -> m (Prod r e t a)) ->
+  (forall t a. Prod r t a -> m (Prod r t a)) ->
   Grammar r b ->
   m b
 runGrammar r grammar = case grammar of

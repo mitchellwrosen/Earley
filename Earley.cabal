@@ -1,3 +1,5 @@
+cabal-version: 2.4
+
 name:                Earley
 version:             0.13.0.1
 synopsis:            Parsing all context-free grammars using Earley's algorithm.
@@ -5,14 +7,13 @@ description:         See <https://www.github.com/ollef/Earley> for more
                      information and
                      <https://github.com/ollef/Earley/tree/master/examples> for
                      examples.
-license:             BSD3
+license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Olle Fredriksson
 maintainer:          fredriksson.olle@gmail.com
 copyright:           (c) 2014-2019 Olle Fredriksson
 category:            Parsing
 build-type:          Simple
-cabal-version:       >=1.10
 tested-with:         GHC==7.6.3, GHC==7.8.4, GHC==7.10.3, GHC==8.0.2, GHC==8.2.1, GHC==8.4.1
 
 extra-source-files:
@@ -38,9 +39,10 @@ library
                        Text.Earley.Mixfix,
                        Text.Earley.Parser,
                        Text.Earley.Parser.Internal
-  build-depends:       base >=4.11 && <5, ListLike >=4.1
-  if impl(ghc < 8.0)
-    build-depends:     semigroups >=0.18
+  build-depends:
+    base >= 4.11 && < 5,
+    ListLike >=4.1,
+    text ^>= 2.0 || ^>= 2.1,
   default-extensions:
     BangPatterns
     DeriveFunctor

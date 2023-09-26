@@ -9,6 +9,7 @@ import Control.Monad.ST
 import Data.ListLike (ListLike)
 import qualified Data.ListLike as ListLike
 import Data.STRef
+import Data.Text (Text)
 import Text.Earley.Grammar
 
 -------------------------------------------------------------------------------
@@ -18,13 +19,13 @@ import Text.Earley.Grammar
 -------------------------------------------------------------------------------
 
 -- | The concrete rule type that the parser uses
-data Rule s r e t a = Rule
-  { ruleProd :: ProdR s r e t a,
-    ruleConts :: !(STRef s (STRef s [Cont s r e t a r])),
+data Rule s r t a = Rule
+  { ruleProd :: ProdR s r t a,
+    ruleConts :: !(STRef s (STRef s [Cont s r t a r])),
     ruleNulls :: !(Results s a)
   }
 
-mkRule :: ProdR s r e t a -> ST s (Rule s r e t a)
+mkRule :: ProdR s r t a -> ST s (Rule s r t a)
 mkRule p = mdo
   c <- newSTRef =<< newSTRef mempty
   computeNullsRef <- newSTRef $ do
@@ -34,7 +35,7 @@ mkRule p = mdo
     return ns
   return $ Rule (removeNulls p) c (Results $ join $ readSTRef computeNullsRef)
 
-prodNulls :: ProdR s r e t a -> Results s a
+prodNulls :: ProdR s r t a -> Results s a
 prodNulls prod = case prod of
   Terminal {} -> empty
   NonTerminal r p -> ruleNulls r <**> prodNulls p
@@ -44,7 +45,7 @@ prodNulls prod = case prod of
   Named p _ -> prodNulls p
 
 -- | Remove (some) nulls from a production
-removeNulls :: ProdR s r e t a -> ProdR s r e t a
+removeNulls :: ProdR s r t a -> ProdR s r t a
 removeNulls prod = case prod of
   Terminal {} -> prod
   NonTerminal {} -> prod
@@ -54,9 +55,9 @@ removeNulls prod = case prod of
   Many {} -> prod
   Named p n -> Named (removeNulls p) n
 
-type ProdR s r e t a = Prod (Rule s r) e t a
+type ProdR s r t a = Prod (Rule s r) t a
 
-resetConts :: Rule s r e t a -> ST s ()
+resetConts :: Rule s r t a -> ST s ()
 resetConts r = writeSTRef (ruleConts r) =<< newSTRef mempty
 
 -------------------------------------------------------------------------------
@@ -107,44 +108,44 @@ data BirthPos
   deriving (Eq)
 
 -- | An Earley state with result type @a@.
-data State s r e t a where
+data State s r t a where
   State ::
-    !(ProdR s r e t a) ->
+    !(ProdR s r t a) ->
     !(a -> Results s b) ->
     !BirthPos ->
-    !(Conts s r e t b c) ->
-    State s r e t c
-  Final :: !(Results s a) -> State s r e t a
+    !(Conts s r t b c) ->
+    State s r t c
+  Final :: !(Results s a) -> State s r t a
 
 -- | A continuation accepting an @a@ and producing a @b@.
-data Cont s r e t a b where
+data Cont s r t a b where
   Cont ::
     !(a -> Results s b) ->
-    !(ProdR s r e t (b -> c)) ->
+    !(ProdR s r t (b -> c)) ->
     !(c -> Results s d) ->
-    !(Conts s r e t d e') ->
-    Cont s r e t a e'
-  FinalCont :: (a -> Results s c) -> Cont s r e t a c
+    !(Conts s r t d e') ->
+    Cont s r t a e'
+  FinalCont :: (a -> Results s c) -> Cont s r t a c
 
-data Conts s r e t a c = Conts
-  { conts :: !(STRef s [Cont s r e t a c]),
+data Conts s r t a c = Conts
+  { conts :: !(STRef s [Cont s r t a c]),
     contsArgs :: !(STRef s (Maybe (STRef s (Results s a))))
   }
 
-newConts :: STRef s [Cont s r e t a c] -> ST s (Conts s r e t a c)
+newConts :: STRef s [Cont s r t a c] -> ST s (Conts s r t a c)
 newConts r = Conts r <$> newSTRef Nothing
 
-contraMapCont :: (b -> Results s a) -> Cont s r e t a c -> Cont s r e t b c
+contraMapCont :: (b -> Results s a) -> Cont s r t a c -> Cont s r t b c
 contraMapCont f (Cont g p args cs) = Cont (f >=> g) p args cs
 contraMapCont f (FinalCont args) = FinalCont (f >=> args)
 
-contToState :: BirthPos -> Results s a -> Cont s r e t a c -> State s r e t c
+contToState :: BirthPos -> Results s a -> Cont s r t a c -> State s r t c
 contToState pos r (Cont g p args cs) = State p (\f -> r >>= g >>= args . f) pos cs
 contToState _ r (FinalCont args) = Final $ r >>= args
 
 -- | Strings of non-ambiguous continuations can be optimised by removing
 -- indirections.
-simplifyCont :: Conts s r e t b a -> ST s [Cont s r e t b a]
+simplifyCont :: Conts s r t b a -> ST s [Cont s r t b a]
 simplifyCont Conts {conts = cont} = readSTRef cont >>= go False
   where
     go !_ [Cont g (Pure f) args cont'] = do
@@ -162,7 +163,7 @@ simplifyCont Conts {conts = cont} = readSTRef cont >>= go False
 -------------------------------------------------------------------------------
 
 -- | Given a grammar, construct an initial state.
-initialState :: ProdR s a e t a -> ST s (State s a e t a)
+initialState :: ProdR s a t a -> ST s (State s a t a)
 initialState p = State p pure Previous <$> (newConts =<< newSTRef [FinalCont pure])
 
 -------------------------------------------------------------------------------
@@ -174,13 +175,13 @@ initialState p = State p pure Previous <$> (newConts =<< newSTRef [FinalCont pur
 -- | A parsing report, which contains fields that are useful for presenting
 -- errors to the user if a parse is deemed a failure.  Note however that we get
 -- a report even when we successfully parse something.
-data Report e i = Report
+data Report i = Report
   { -- | The final position in the input (0-based) that the
     -- parser reached.
     position :: Int,
     -- | The named productions processed at the final
     -- position.
-    expected :: [e],
+    expected :: [Text],
     -- | The part of the input string that was not consumed,
     -- which may be empty.
     unconsumed :: i
@@ -188,27 +189,27 @@ data Report e i = Report
   deriving (Eq, Ord, Read, Show)
 
 -- | The result of a parse.
-data Result s e i a
+data Result s i a
   = -- | The parser ended.
-    Ended (Report e i)
+    Ended (Report i)
   | -- | The parser parsed a number of @a@s.  These are given as a computation,
     -- @'ST' s [a]@ that constructs the 'a's when run.  We can thus save some
     -- work by ignoring this computation if we do not care about the results.
     -- The 'Int' is the position in the input where these results were
     -- obtained, the @i@ the rest of the input, and the last component is the
     -- continuation.
-    Parsed (ST s [a]) Int i (ST s (Result s e i a))
+    Parsed (ST s [a]) Int i (ST s (Result s i a))
   deriving (Functor)
 
-data ParseEnv s e i t a = ParseEnv
+data ParseEnv s i t a = ParseEnv
   { -- | Results ready to be reported (when this position has been processed)
     results :: ![ST s [a]],
     -- | States to process at the next position
-    next :: ![State s a e t a],
+    next :: ![State s a t a],
     -- | Computation that resets the continuation refs of productions
     reset :: !(ST s ()),
     -- | Named productions encountered at this position
-    names :: ![e],
+    names :: ![Text],
     -- | The current position in the input string
     curPos :: !Int,
     -- | The input string
@@ -216,7 +217,7 @@ data ParseEnv s e i t a = ParseEnv
   }
 
 {-# INLINE emptyParseEnv #-}
-emptyParseEnv :: i -> ParseEnv s e i t a
+emptyParseEnv :: i -> ParseEnv s i t a
 emptyParseEnv i =
   ParseEnv
     { results = mempty,
@@ -228,18 +229,18 @@ emptyParseEnv i =
     }
 
 {-# SPECIALIZE parse ::
-  [State s a e t a] ->
-  ParseEnv s e [t] t a ->
-  ST s (Result s e [t] a)
+  [State s a t a] ->
+  ParseEnv s [t] t a ->
+  ST s (Result s [t] a)
   #-}
 
 -- | The internal parsing routine
 parse ::
   (ListLike i t) =>
   -- | States to process at this position
-  [State s a e t a] ->
-  ParseEnv s e i t a ->
-  ST s (Result s e i a)
+  [State s a t a] ->
+  ParseEnv s i t a ->
+  ST s (Result s i a)
 parse [] env@ParseEnv {results = [], next = []} = do
   reset env
   return $
@@ -329,15 +330,15 @@ parse (st : ss) env = case st of
         (State pr' args pos scont : ss)
         env {names = n : names env}
 
-type Parser e i a = forall s. i -> ST s (Result s e i a)
+type Parser i a = forall s. i -> ST s (Result s i a)
 
 {-# INLINE parser #-}
 
 -- | Create a parser from the given grammar.
 parser ::
   (ListLike i t) =>
-  (forall r. Grammar r (Prod r e t a)) ->
-  Parser e i a
+  (forall r. Grammar r (Prod r t a)) ->
+  Parser i a
 parser g i = do
   let nt x = NonTerminal x $ pure id
   s <- initialState =<< runGrammar (fmap nt . mkRule) g
@@ -351,12 +352,12 @@ parser g i = do
 -- ascending order.  If there are multiple results at the same position they
 -- are returned in an unspecified order.
 allParses ::
-  Parser e i a ->
+  Parser i a ->
   i ->
-  ([(a, Int)], Report e i)
+  ([(a, Int)], Report i)
 allParses p i = runST $ p i >>= go
   where
-    go :: Result s e i a -> ST s ([(a, Int)], Report e i)
+    go :: Result s i a -> ST s ([(a, Int)], Report i)
     go r = case r of
       Ended rep -> return ([], rep)
       Parsed mas cpos _ k -> do
@@ -371,12 +372,12 @@ allParses p i = runST $ p i >>= go
 -- If there are multiple results they are returned in an unspecified order.
 fullParses ::
   (ListLike i t) =>
-  Parser e i a ->
+  Parser i a ->
   i ->
-  ([a], Report e i)
+  ([a], Report i)
 fullParses p i = runST $ p i >>= go
   where
-    go :: (ListLike i t) => Result s e i a -> ST s ([a], Report e i)
+    go :: (ListLike i t) => Result s i a -> ST s ([a], Report i)
     go r = case r of
       Ended rep -> return ([], rep)
       Parsed mas _ i' k
@@ -391,12 +392,12 @@ fullParses p i = runST $ p i >>= go
 -- fails.  This can be much faster than getting the parse results for highly
 -- ambiguous grammars.
 report ::
-  Parser e i a ->
+  Parser i a ->
   i ->
-  Report e i
+  Report i
 report p i = runST $ p i >>= go
   where
-    go :: Result s e i a -> ST s (Report e i)
+    go :: Result s i a -> ST s (Report i)
     go r = case r of
       Ended rep -> return rep
       Parsed _ _ _ k -> go =<< k

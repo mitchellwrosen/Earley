@@ -41,14 +41,14 @@ mixfixExpression ::
   --
   -- Note that this rule also applies to identifiers with multiple consecutive
   -- holes, e.g. "if__" --- the associativity then applies to both holes.
-  [[(Holey (Prod r e t ident), Associativity)]] ->
+  [[(Holey (Prod r t ident), Associativity)]] ->
   -- | An atom, i.e. what is parsed at the lowest level. This will
   -- commonly be a (non-mixfix) identifier or a parenthesised expression.
-  Prod r e t expr ->
+  Prod r t expr ->
   -- | How to combine the successful application of a holey identifier to its
   -- arguments into an expression.
   (Holey ident -> [expr] -> expr) ->
-  Grammar r (Prod r e t expr)
+  Grammar r (Prod r t expr)
 mixfixExpression table atom app = mixfixExpressionSeparate table' atom
   where
     table' = [[(holey, assoc, app) | (holey, assoc) <- row] | row <- table]
@@ -66,11 +66,11 @@ mixfixExpressionSeparate ::
   --
   -- Note that this rule also applies to identifiers with multiple consecutive
   -- holes, e.g. "if__" --- the associativity then applies to both holes.
-  [[(Holey (Prod r e t ident), Associativity, Holey ident -> [expr] -> expr)]] ->
+  [[(Holey (Prod r t ident), Associativity, Holey ident -> [expr] -> expr)]] ->
   -- | An atom, i.e. what is parsed at the lowest level. This will
   -- commonly be a (non-mixfix) identifier or a parenthesised expression.
-  Prod r e t expr ->
-  Grammar r (Prod r e t expr)
+  Prod r t expr ->
+  Grammar r (Prod r t expr)
 mixfixExpressionSeparate table atom = mdo
   expr <- foldrM ($) atom $ map (level expr) table
   return expr

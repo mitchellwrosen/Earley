@@ -10,7 +10,6 @@ module Text.Earley
     -- * Derived operators
     satisfy,
     token,
-    namedToken,
     anyToken,
     list,
     listLike,
