@@ -1,7 +1,3 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeOperators #-}
-
 -- | Context-free grammars.
 module Text.Earley.Grammar
   ( Prod (..),

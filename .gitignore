@@ -1,10 +1,11 @@
-*.hi
-*.o
 *.aux
+*.hi
 *.hp
+*.o
 *.prof
-dist/
 .cabal-sandbox
+.stack-work
+Session.vim
 cabal.sandbox.config
 dist-newstyle/
-.stack-work
+dist/

@@ -1,9 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE RecursiveDo #-}
-
 -- | This module exposes the internals of the package: its API may change
 -- independently of the PVP-compliant version number.
 module Text.Earley.Generator.Internal where

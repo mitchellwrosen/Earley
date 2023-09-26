@@ -1,5 +1,3 @@
-{-# LANGUAGE RecursiveDo #-}
-
 module Text.Earley.Mixfix
   ( Associativity (..),
     Holey,

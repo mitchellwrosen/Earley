@@ -41,6 +41,14 @@ library
   build-depends:       base >=4.11 && <5, ListLike >=4.1
   if impl(ghc < 8.0)
     build-depends:     semigroups >=0.18
+  default-extensions:
+    BangPatterns
+    DeriveFunctor
+    GADTs
+    RankNTypes
+    RecursiveDo
+    TupleSections
+    TypeOperators
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -funbox-strict-fields

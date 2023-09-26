@@ -1,5 +1,3 @@
-{-# LANGUAGE Rank2Types #-}
-
 -- | Derived operators.
 module Text.Earley.Derived where
 
