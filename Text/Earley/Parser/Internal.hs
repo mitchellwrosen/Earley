@@ -10,7 +10,6 @@ import Data.ListLike(ListLike)
 import qualified Data.ListLike as ListLike
 import Data.STRef
 import Text.Earley.Grammar
-import Data.Semigroup
 
 -------------------------------------------------------------------------------
 -- * Concrete rules and productions

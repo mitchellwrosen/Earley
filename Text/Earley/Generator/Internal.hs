@@ -8,7 +8,6 @@ import Control.Monad.ST.Lazy
 import Data.Maybe(mapMaybe)
 import Data.STRef.Lazy
 import Text.Earley.Grammar
-import Data.Semigroup
 
 -------------------------------------------------------------------------------
 -- * Concrete rules and productions
