@@ -69,46 +69,46 @@ instance Arbitrary Expr where
   shrink (Add a b)  = a : b : [ Add a' b | a' <- shrink a ] ++ [ Add a b' | b' <- shrink b ]
   shrink (Mul a b)  = a : b : [ Mul a' b | a' <- shrink a ] ++ [ Mul a b' | b' <- shrink b ]
 
-leftExpr :: Grammar r (Prod r String String Expr)
+leftExpr :: Grammar r (Prod r String Expr)
 leftExpr = mdo
-  x1 <- rule $ Add <$> x1 <* namedToken "+" <*> x2
+  x1 <- rule $ Add <$> x1 <* (token "+" <?> "+") <*> x2
             <|> x2
             <?> "sum"
-  x2 <- rule $ Mul <$> x2 <* namedToken "*" <*> x3
+  x2 <- rule $ Mul <$> x2 <* (token "*" <?> "*") <*> x3
             <|> x3
             <?> "product"
   x3 <- rule $ Var <$> (satisfy ident <?> "identifier")
-            <|> namedToken "(" *> x1 <* namedToken ")"
+            <|> (token "(" <?> "(") *> x1 <* (token ")" <?> ")")
   return x1
   where
     ident (x:_) = isAlpha x
     ident _     = False
 
-rightExpr :: Grammar r (Prod r String String Expr)
+rightExpr :: Grammar r (Prod r String Expr)
 rightExpr = mdo
-  x1 <- rule $ Add <$> x2 <* namedToken "+" <*> x1
+  x1 <- rule $ Add <$> x2 <* (token "+" <?> "+") <*> x1
             <|> x2
             <?> "sum"
-  x2 <- rule $ Mul <$> x3 <* namedToken "*" <*> x2
+  x2 <- rule $ Mul <$> x3 <* (token "*" <?> "*") <*> x2
             <|> x3
             <?> "product"
   x3 <- rule $ Var <$> (satisfy ident <?> "identifier")
-            <|> namedToken "(" *> x1 <* namedToken ")"
+            <|> (token "(" <?> "(") *> x1 <* (token ")" <?> ")")
   return x1
   where
     ident (x:_) = isAlpha x
     ident _     = False
 
-ambiguousExpr :: Grammar r (Prod r String String Expr)
+ambiguousExpr :: Grammar r (Prod r String Expr)
 ambiguousExpr = mdo
-  x1 <- rule $ Add <$> x1 <* namedToken "+" <*> x1
+  x1 <- rule $ Add <$> x1 <* (token "+" <?> "+") <*> x1
             <|> x2
             <?> "sum"
-  x2 <- rule $ Mul <$> x2 <* namedToken "*" <*> x2
+  x2 <- rule $ Mul <$> x2 <* (token "*" <?> "*") <*> x2
             <|> x3
             <?> "product"
   x3 <- rule $ Var <$> (satisfy ident <?> "identifier")
-            <|> namedToken "(" *> x1 <* namedToken ")"
+            <|> (token "(" <?> "(") *> x1 <* (token ")" <?> ")")
   return x1
   where
     ident (x:_) = isAlpha x

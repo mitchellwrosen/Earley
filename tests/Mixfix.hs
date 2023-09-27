@@ -1,5 +1,4 @@
 module Mixfix where
-import Control.Applicative
 import Test.Tasty
 import Test.Tasty.HUnit as HU
 
@@ -29,9 +28,9 @@ tests = testGroup "Mixfix"
 data MixfixExpr = Ident (Holey String) | App (Holey String) [MixfixExpr]
   deriving (Eq, Show)
 
-mixfixGrammar :: Grammar r (Prod r String String MixfixExpr)
+mixfixGrammar :: Grammar r (Prod r String MixfixExpr)
 mixfixGrammar = mixfixExpression table
-                                 (Ident . pure . Just <$> namedToken "x")
+                                 (Ident . pure . Just <$> (token "x" <?> "x"))
                                  App
   where
     hident = map (fmap token)

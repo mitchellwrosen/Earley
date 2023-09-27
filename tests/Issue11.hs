@@ -1,6 +1,5 @@
 {-# LANGUAGE RecursiveDo #-}
 module Issue11 where
-import Control.Applicative
 import Test.Tasty
 import Test.Tasty.HUnit as HU
 
@@ -59,7 +58,7 @@ data AST
   | Plus AST AST
   deriving (Eq, Ord, Show)
 
-grammar :: Associativity -> Grammar r (Prod r String String AST)
+grammar :: Associativity -> Grammar r (Prod r String AST)
 grammar a = mdo
     atomicExpr <- rule $ Var <$> satisfy (/= "+")
 

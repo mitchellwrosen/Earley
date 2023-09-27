@@ -2,6 +2,7 @@
 module Text.Earley.Grammar
   ( Prod (..),
     terminal,
+    nonTerminal,
     (<?>),
     alts,
     Grammar (..),
@@ -54,7 +55,10 @@ data Prod r t a where
 -- | Match a token for which the given predicate returns @Just a@,
 -- and return the @a@.
 terminal :: (t -> Maybe a) -> Prod r t a
-terminal p = Terminal p $ Pure id
+terminal p = Terminal p (Pure id)
+
+nonTerminal :: r t a -> Prod r t a
+nonTerminal p = NonTerminal p (Pure id)
 
 -- | A named production (used for reporting expected things).
 (<?>) :: Prod r t a -> Text -> Prod r t a
@@ -80,33 +84,39 @@ instance Functor (Prod r t) where
 
 -- | Smart constructor for alternatives.
 alts :: [Prod r t a] -> Prod r t (a -> b) -> Prod r t b
-alts as p = case as >>= go of
-  [] -> empty
-  [a] -> a <**> p
-  as' -> Alts as' p
+alts as p =
+  case as >>= go of
+    [] -> empty
+    [a] -> a <**> p
+    as' -> Alts as' p
   where
-    go (Alts [] _) = []
-    go (Alts as' (Pure f)) = fmap f <$> as'
-    go (Named p' n) = map (<?> n) $ go p'
-    go a = [a]
+    go = \case
+      Alts [] _ -> []
+      Alts as' (Pure f) -> fmap f <$> as'
+      Named p' n -> map (<?> n) $ go p'
+      a -> [a]
 
 instance Applicative (Prod r t) where
   pure = Pure
-  {-# INLINE (<*>) #-}
+
   Terminal b p <*> q = Terminal b $ flip <$> p <*> q
   NonTerminal r p <*> q = NonTerminal r $ flip <$> p <*> q
   Pure f <*> q = fmap f q
   Alts as p <*> q = alts as $ flip <$> p <*> q
   Many a p <*> q = Many a $ flip <$> p <*> q
   Named p n <*> q = Named (p <*> q) n
+  {-# INLINE (<*>) #-}
 
 instance Alternative (Prod r t) where
-  empty = Alts [] $ pure id
+  empty = Alts [] $ Pure id
+
   Named p m <|> q = Named (p <|> q) m
   p <|> Named q n = Named (p <|> q) n
-  p <|> q = alts [p, q] $ pure id
-  many (Alts [] _) = pure []
+  p <|> q = alts [p, q] $ Pure id
+
+  many (Alts [] _) = Pure []
   many p = Many p $ Pure id
+
   some p = (:) <$> p <*> many p
 
 -- | String literals can be interpreted as 'Terminal's
@@ -144,9 +154,10 @@ data Grammar r a where
   Return :: a -> Grammar r a
 
 instance Functor (Grammar r) where
-  fmap f (RuleBind ps h) = RuleBind ps (fmap f . h)
-  fmap f (FixBind g h) = FixBind g (fmap f . h)
-  fmap f (Return x) = Return $ f x
+  fmap f = \case
+    RuleBind ps h -> RuleBind ps (fmap f . h)
+    FixBind g h -> FixBind g (fmap f . h)
+    Return x -> Return $ f x
 
 instance Applicative (Grammar r) where
   pure = Return
@@ -158,24 +169,28 @@ instance Monad (Grammar r) where
   Return x >>= k = k x
 
 instance MonadFix (Grammar r) where
-  mfix f = FixBind f return
+  mfix f = FixBind f pure
 
 -- | Create a new non-terminal by giving its production.
 rule :: Prod r t a -> Grammar r (Prod r t a)
-rule p = RuleBind p return
+rule p = RuleBind p pure
 
 -- | Run a grammar, given an action to perform on productions to be turned into
 -- non-terminals.
 runGrammar ::
+  forall b m r.
   (MonadFix m) =>
   (forall t a. Prod r t a -> m (Prod r t a)) ->
   Grammar r b ->
   m b
-runGrammar r grammar = case grammar of
-  RuleBind p k -> do
-    nt <- r p
-    runGrammar r $ k nt
-  Return a -> return a
-  FixBind f k -> do
-    a <- mfix $ runGrammar r <$> f
-    runGrammar r $ k a
+runGrammar r = go
+  where
+    go :: forall x. Grammar r x -> m x
+    go = \case
+      RuleBind p k -> do
+        nt <- r p
+        go $ k nt
+      Return a -> pure a
+      FixBind f k -> mdo
+        a <- go (f a)
+        go (k a)

@@ -16,14 +16,14 @@ tests = testGroup "Inline alternatives"
       take 1000 (language $ generator nonInlineAlts "ab")
   ]
 
-inlineAlts :: Grammar r (Prod r Char Char String)
+inlineAlts :: Grammar r (Prod r Char String)
 inlineAlts = mdo
   p <- rule $ pure []
-           <|> (:) <$> (namedToken 'a' <|> namedToken 'b') <*> p
+           <|> (:) <$> ((token 'a' <?> "a") <|> (token 'b' <?> "b")) <*> p
   return p
 
-nonInlineAlts :: Grammar r (Prod r Char Char String)
+nonInlineAlts :: Grammar r (Prod r Char String)
 nonInlineAlts = mdo
-  ab <- rule $ namedToken 'a' <|> namedToken 'b'
+  ab <- rule $ (token 'a' <?> "a") <|> (token 'b' <?> "b")
   p  <- rule $ pure [] <|> (:) <$> ab <*> p
   return p

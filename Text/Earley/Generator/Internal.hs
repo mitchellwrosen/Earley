@@ -58,20 +58,19 @@ resetConts :: Rule s r t a -> ST s ()
 resetConts r = writeSTRef (ruleConts r) =<< newSTRef mempty
 
 -------------------------------------------------------------------------------
-
--- * Delayed results
-
+-- Delayed results
 -------------------------------------------------------------------------------
+
 newtype Results s t a = Results {unResults :: ST s [(a, [t])]}
   deriving (Functor)
 
 lazyResults :: ST s [(a, [t])] -> ST s (Results s t a)
 lazyResults stas = mdo
-  resultsRef <- newSTRef $ do
+  resultsRef <- newSTRef do
     as <- stas
-    writeSTRef resultsRef $ return as
-    return as
-  return $ Results $ join $ readSTRef resultsRef
+    writeSTRef resultsRef $ pure as
+    pure as
+  pure $ Results $ join $ readSTRef resultsRef
 
 instance Applicative (Results s t) where
   pure x = Results $ pure [(x, mempty)]
@@ -164,9 +163,7 @@ initialState :: ProdR s a t a -> ST s (State s a t a)
 initialState p = State p pure Previous <$> (newConts =<< newSTRef [FinalCont pure])
 
 -------------------------------------------------------------------------------
-
--- * Generation
-
+-- Generation
 -------------------------------------------------------------------------------
 
 -- | The result of a generator.

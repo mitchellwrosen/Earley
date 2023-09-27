@@ -44,11 +44,17 @@ library
     text ^>= 2.0 || ^>= 2.1,
   default-extensions:
     BangPatterns
+    BlockArguments
     DeriveFunctor
+    DerivingStrategies
     GADTs
+    LambdaCase
+    NamedFieldPuns
     RankNTypes
     RecursiveDo
+    ScopedTypeVariables
     TupleSections
+    TypeApplications
     TypeOperators
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -141,6 +147,8 @@ test-suite tests
   main-is:             Main.hs
   ghc-options:         -Wall
   hs-source-dirs:      tests
+  default-extensions:
+    OverloadedStrings
   default-language:    Haskell2010
   build-depends:       base, Earley, tasty >=0.10, tasty-quickcheck >=0.8, tasty-hunit >= 0.9, QuickCheck >= 2.8, containers >= 0.6
   other-modules:

@@ -2,7 +2,6 @@
 module Lambda where
 import Control.Applicative
 import Data.List as List
-import Data.Foldable
 import Test.Tasty
 import Test.Tasty.HUnit as HU
 import Test.Tasty.QuickCheck as QC
@@ -90,9 +89,9 @@ instance Arbitrary Expr where
   shrink (App a b) = a : b : [App a' b' | a' <- shrink a, b' <- shrink b]
   shrink (Add a b) = a : b : [Add a' b' | a' <- shrink a, b' <- shrink b]
 
-grammar :: Grammar r (Prod r String Char Expr)
+grammar :: Grammar r (Prod r Char Expr)
 grammar = mdo
-  let v = asum (token <$> "ab")
+  let v = asum (token <$> ("ab" :: String))
         <?> "variable"
   x1 <- rule
     $ Lam <$ token '\\' <*> some v <* token '.' <*> x1

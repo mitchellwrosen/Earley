@@ -29,8 +29,8 @@ tests = testGroup "Empty productions"
       language (generator manyEmpty "blahc") @?= [([], "")]
   ]
 
-emptyGrammar :: Grammar r (Prod r () Char ())
+emptyGrammar :: Grammar r (Prod r Char ())
 emptyGrammar = return empty
 
-manyEmpty :: Grammar r (Prod r () Char [()])
-manyEmpty = return $ many empty <* pure "blah"
+manyEmpty :: Grammar r (Prod r Char [()])
+manyEmpty = return $ many empty <* pure ("blah" :: String)

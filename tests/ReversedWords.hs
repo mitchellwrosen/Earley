@@ -5,7 +5,7 @@ import Test.Tasty.HUnit as HU
 
 import Text.Earley
 
-someWords :: Grammar r (Prod r () Char [String])
+someWords :: Grammar r (Prod r Char [String])
 someWords = return $ flip (:) <$> (map reverse <$> some (list "word")) <*> list "stop"
 
 tests :: TestTree
