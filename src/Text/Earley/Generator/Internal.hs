@@ -8,6 +8,8 @@ import Control.Monad.ST.Lazy
 import Data.Maybe (mapMaybe)
 import Data.STRef.Lazy
 import Text.Earley.Grammar
+import Text.Earley.Prod (Prod)
+import Text.Earley.Prod qualified as Prod
 
 -------------------------------------------------------------------------------
 -- Concrete rules and productions
@@ -32,23 +34,23 @@ mkRule p = mdo
 
 prodNulls :: ProdR s r t a -> Results s t a
 prodNulls prod = case prod of
-  Terminal {} -> empty
-  NonTerminal r p -> ruleNulls r <**> prodNulls p
-  Pure a -> pure a
-  Alts as p -> mconcat (map prodNulls as) <**> prodNulls p
-  Many a p -> prodNulls (pure [] <|> pure <$> a) <**> prodNulls p
-  Named p _ -> prodNulls p
+  Prod.Terminal {} -> empty
+  Prod.NonTerminal r p -> ruleNulls r <**> prodNulls p
+  Prod.Pure a -> pure a
+  Prod.Alts as p -> mconcat (map prodNulls as) <**> prodNulls p
+  Prod.Many a p -> prodNulls (pure [] <|> pure <$> a) <**> prodNulls p
+  Prod.Named p _ -> prodNulls p
 
 -- | Remove (some) nulls from a production
 removeNulls :: ProdR s r t a -> ProdR s r t a
 removeNulls prod = case prod of
-  Terminal {} -> prod
-  NonTerminal {} -> prod
-  Pure _ -> empty
-  Alts as (Pure f) -> alts (map removeNulls as) $ Pure f
-  Alts {} -> prod
-  Many {} -> prod
-  Named p n -> Named (removeNulls p) n
+  Prod.Terminal {} -> prod
+  Prod.NonTerminal {} -> prod
+  Prod.Pure _ -> empty
+  Prod.Alts as (Prod.Pure f) -> Prod.alts (map removeNulls as) $ Prod.Pure f
+  Prod.Alts {} -> prod
+  Prod.Many {} -> prod
+  Prod.Named p n -> Prod.Named (removeNulls p) n
 
 type ProdR s r t a = Prod (Rule s r) t a
 
@@ -136,12 +138,11 @@ contToState :: BirthPos -> Results s t a -> Cont s r t a c -> State s r t c
 contToState pos r (Cont g p args cs) = State p (\f -> r >>= g >>= args . f) pos cs
 contToState _ r (FinalCont args) = Final $ r >>= args
 
--- | Strings of non-ambiguous continuations can be optimised by removing
--- indirections.
+-- | Strings of non-ambiguous continuations can be optimised by removing indirections.
 simplifyCont :: Conts s r t b a -> ST s [Cont s r t b a]
 simplifyCont Conts {conts = cont} = readSTRef cont >>= go False
   where
-    go !_ [Cont g (Pure f) args cont'] = do
+    go !_ [Cont g (Prod.Pure f) args cont'] = do
       ks' <- simplifyCont cont'
       go True $ map (contraMapCont $ g >=> args . f) ks'
     go True ks = do
@@ -150,9 +151,7 @@ simplifyCont Conts {conts = cont} = readSTRef cont >>= go False
     go False ks = return ks
 
 -------------------------------------------------------------------------------
-
--- * Grammars
-
+-- Grammars
 -------------------------------------------------------------------------------
 
 -- | Given a grammar, construct an initial state.
@@ -214,7 +213,7 @@ generate [] env = do
 generate (st : ss) env = case st of
   Final res -> generate ss env {results = unResults res : results env}
   State pr args pos scont -> case pr of
-    Terminal f p ->
+    Prod.Terminal f p ->
       generate
         ss
         env
@@ -222,7 +221,7 @@ generate (st : ss) env = case st of
               [State p (\g -> Results (pure $ map (\(t, a) -> (g a, [t])) xs) >>= args) Previous scont | xs <- [mapMaybe (\t -> (,) t <$> f t) $ tokens env], not $ null xs]
                 ++ next env
           }
-    NonTerminal r p -> do
+    Prod.NonTerminal r p -> do
       rkref <- readSTRef $ ruleConts r
       ks <- readSTRef rkref
       writeSTRef rkref (Cont pure p args scont : ks)
@@ -241,7 +240,7 @@ generate (st : ss) env = case st of
             env {reset = resetConts r >> reset env}
         else -- The rule has already been expanded at this position.
           generate (addNullState ss) env
-    Pure a
+    Prod.Pure a
       -- Skip following continuations that stem from the current position; such
       -- continuations are handled separately.
       | pos == Current -> generate ss env
@@ -263,18 +262,18 @@ generate (st : ss) env = case st of
               generate
                 (kstates ++ ss)
                 env {reset = writeSTRef argsRef Nothing >> reset env}
-    Alts as (Pure f) -> do
+    Prod.Alts as (Prod.Pure f) -> do
       let args' = args . f
           sts = [State a args' pos scont | a <- as]
       generate (sts ++ ss) env
-    Alts as p -> do
+    Prod.Alts as p -> do
       scont' <- newConts =<< newSTRef [Cont pure p args scont]
       let sts = [State a pure Previous scont' | a <- as]
       generate (sts ++ ss) env
-    Many p q -> mdo
-      r <- mkRule $ pure [] <|> (:) <$> p <*> NonTerminal r (Pure id)
-      generate (State (NonTerminal r q) args pos scont : ss) env
-    Named pr' _ -> generate (State pr' args pos scont : ss) env
+    Prod.Many p q -> mdo
+      r <- mkRule $ pure [] <|> (:) <$> p <*> Prod.NonTerminal r (Prod.Pure id)
+      generate (State (Prod.NonTerminal r q) args pos scont : ss) env
+    Prod.Named pr' _ -> generate (State pr' args pos scont : ss) env
 
 type Generator t a = forall s. ST s (Result s t a)
 
@@ -284,7 +283,7 @@ generator ::
   [t] ->
   Generator t a
 generator g ts = do
-  let nt x = NonTerminal x $ pure id
+  let nt x = Prod.NonTerminal x $ pure id
   s <- initialState =<< runGrammar (fmap nt . mkRule) g
   generate [s] $ emptyGenerationEnv ts
 

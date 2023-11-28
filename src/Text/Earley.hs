@@ -38,3 +38,4 @@ import Text.Earley.Derived
 import Text.Earley.Generator
 import Text.Earley.Grammar
 import Text.Earley.Parser as Parser
+import Text.Earley.Prod (Prod, terminal, (<?>))

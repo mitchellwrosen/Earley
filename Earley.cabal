@@ -43,24 +43,18 @@ library
     base >= 4.11 && < 5,
     text ^>= 2.0 || ^>= 2.1,
   default-extensions:
-    BangPatterns
     BlockArguments
-    DeriveFunctor
     DerivingStrategies
-    GADTs
+    DuplicateRecordFields
     LambdaCase
-    NamedFieldPuns
     OverloadedRecordDot
-    RankNTypes
     RecursiveDo
-    ScopedTypeVariables
-    TupleSections
-    TypeApplications
-    TypeOperators
-  default-language:    Haskell2010
+  default-language:    GHC2021
   ghc-options:         -Wall
                        -funbox-strict-fields
   hs-source-dirs:      src
+  other-modules:
+    Text.Earley.Prod
 
 executable earley-english
   if !flag(examples)

@@ -4,12 +4,14 @@ module Text.Earley.Derived where
 import Control.Monad (guard)
 import Text.Earley.Grammar
 import Text.Earley.Parser
+import Text.Earley.Prod (Prod)
+import Text.Earley.Prod qualified as Prod
 
 -- | Match a token that satisfies the given predicate. Returns the matched
 -- token. See also 'terminal'.
 {-# INLINE satisfy #-}
 satisfy :: (t -> Bool) -> Prod r t t
-satisfy p = terminal ((<$) <*> guard . p)
+satisfy p = Prod.terminal ((<$) <*> guard . p)
 
 -- | Match a single token.
 token :: (Eq t) => t -> Prod r t t
@@ -17,7 +19,7 @@ token x = satisfy (== x)
 
 -- | Match a single token with any value
 anyToken :: Prod r t t
-anyToken = terminal Just
+anyToken = Prod.terminal Just
 
 -- | Match a list of tokens in sequence.
 {-# INLINE list #-}
