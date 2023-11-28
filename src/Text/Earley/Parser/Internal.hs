@@ -29,13 +29,13 @@ import Text.Earley.Prod qualified as Prod
 -- | The concrete rule type that the parser uses
 data Rule s r t a = Rule
   { prod :: ProdR s r t a,
-    conts :: !(STRef s (STRef s [Cont s r t a r])),
+    contsRefRef :: !(STRef s (ContsRef s r t a r)),
     nulls :: !(Results s a)
   }
 
 mkRule :: ProdR s r t a -> ST s (Rule s r t a)
 mkRule p = mdo
-  c <- newSTRef =<< newSTRef mempty
+  contsRefRef <- newSTRef =<< newSTRef []
   computeNullsRef <-
     newSTRef do
       writeSTRef computeNullsRef (pure [])
@@ -45,9 +45,14 @@ mkRule p = mdo
   pure
     Rule
       { prod = removeNulls p,
-        conts = c,
+        contsRefRef,
         nulls = Results $ join $ readSTRef computeNullsRef
       }
+
+resetRuleConts :: Rule s r t a -> ST s ()
+resetRuleConts rule = do
+  ref <- newSTRef []
+  writeSTRef rule.contsRefRef ref
 
 prodNulls :: ProdR s r t a -> Results s a
 prodNulls = \case
@@ -130,66 +135,120 @@ data BirthPos
 
 -- | An Earley state with result type @a@.
 data State s r t a where
-  State ::
-    !(ProdR s r t a) ->
-    !(a -> Results s b) ->
-    !BirthPos ->
-    !(Conts s r t b c) ->
-    State s r t c
+  State :: !(State1 s r t x y a) -> State s r t a
   Final :: !(Results s a) -> State s r t a
 
--- | A continuation accepting an @a@ and producing a @b@.
+data State1 s r t a b c = State1
+  { prod :: !(ProdR s r t a),
+    args :: !(K s a b),
+    pos :: !BirthPos,
+    conts :: !(Conts s r t b c)
+  }
+
+-- | A continuation accepting an @a@ and producing a list of @b@.
 data Cont s r t a b where
   Cont ::
-    !(a -> Results s b) ->
-    !(ProdR s r t (b -> c)) ->
-    !(c -> Results s d) ->
-    !(Conts s r t d e) ->
-    Cont s r t a e
-  FinalCont :: (a -> Results s b) -> Cont s r t a b
+    !(K s a α) ->
+    !(ProdR s r t (α -> β)) ->
+    !(K s β γ) ->
+    !(Conts s r t γ b) ->
+    Cont s r t a b
+  FinalCont :: K s a b -> Cont s r t a b
+
+newtype K s a b
+  = K (a -> Results s b)
+
+(>*>) :: K s a b -> K s b c -> K s a c
+K f >*> K g = K (f >=> g)
+
+runK :: K s a b -> a -> Results s b
+runK (K f) = f
+
+manyK :: K s a b -> K s (Results s a) b
+manyK (K f) = K (>>= f)
+
+idK :: K s a a
+idK = K pure
+
+lmapK :: (b -> a) -> K s a c -> K s b c
+lmapK f (K g) = K (g . f)
+
+-- rmapK :: (b -> c) -> K s a b -> K s a c
+-- rmapK f (K g) = K (fmap f . g)
+
+pureK :: (a -> [b]) -> K s a b
+pureK f = K (Results . pure . f)
 
 data BeenFollowed s a
   = HasntBeenFollowed
   | HasBeenFollowed !(STRef s (Results s a))
 
 data Conts s r t a b = Conts
-  { conts :: !(STRef s [Cont s r t a b]),
+  { contsRef :: !(ContsRef s r t a b),
     args :: !(STRef s (BeenFollowed s a))
   }
 
-newConts :: STRef s [Cont s r t a c] -> ST s (Conts s r t a c)
-newConts r = Conts r <$> newSTRef HasntBeenFollowed
+type ContsRef s r t a b =
+  STRef s [Cont s r t a b]
 
-contraMapCont :: (b -> Results s a) -> Cont s r t a c -> Cont s r t b c
+newConts :: ContsRef s r t a b -> ST s (Conts s r t a b)
+newConts contsRef = do
+  args <- newSTRef HasntBeenFollowed
+  pure Conts {contsRef, args}
+
+contraMapCont :: K s b a -> Cont s r t a c -> Cont s r t b c
 contraMapCont f = \case
-  Cont g p args cs -> Cont (f >=> g) p args cs
-  FinalCont args -> FinalCont (f >=> args)
+  Cont g p args cs -> Cont (f >*> g) p args cs
+  FinalCont args -> FinalCont (f >*> args)
 
-contToState :: Results s a -> Cont s r t a c -> State s r t c
-contToState r = \case
-  Cont g p args cs -> State p (\f -> r >>= g >>= args . f) Previous cs
-  FinalCont args -> Final (r >>= args)
-
--- | Strings of non-ambiguous continuations can be optimised by removing
--- indirections.
-simplifyCont :: Conts s r t b a -> ST s [Cont s r t b a]
-simplifyCont Conts {conts = cont} = readSTRef cont >>= go False
+contToState :: Results s a -> Cont s r t a b -> State s r t b
+contToState res = \case
+  Cont
+    (g :: K s a α)
+    (prod :: ProdR s r t (α -> β))
+    (args :: K s β γ)
+    (conts :: Conts s r t γ b) ->
+      State
+        State1
+          { prod,
+            args = K (\f -> run (manyK g >*> lmapK f args)),
+            pos = Previous,
+            conts
+          }
+  FinalCont args -> Final (run (manyK args))
   where
-    go !_ [Cont g (Prod.Pure f) args cont'] = do
-      ks' <- simplifyCont cont'
-      go True $ map (contraMapCont $ g >=> args . f) ks'
-    go True ks = do
-      writeSTRef cont ks
-      return ks
-    go False ks = return ks
+    run k = runK k res
+
+-- | Strings of non-ambiguous continuations can be optimised by removing indirections.
+simplifyCont :: Conts s r t a b -> ST s [Cont s r t a b]
+simplifyCont conts = do
+  ks <- readSTRef conts.contsRef
+  go False ks
+  where
+    go changed = \case
+      [Cont g (Prod.Pure f) args cont'] -> do
+        ks' <- simplifyCont cont'
+        go True (map (contraMapCont $ g >*> lmapK f args) ks')
+      ks -> do
+        when changed (writeSTRef conts.contsRef ks)
+        pure ks
 
 -------------------------------------------------------------------------------
 -- Grammars
 -------------------------------------------------------------------------------
 
--- | Given a grammar, construct an initial state.
+-- | Given a production, construct an initial state.
 initialState :: ProdR s a t a -> ST s (State s a t a)
-initialState p = State p pure Previous <$> (newConts =<< newSTRef [FinalCont pure])
+initialState prod = do
+  conts <- newConts =<< newSTRef [FinalCont idK]
+  pure $
+    State
+      State1
+        { prod,
+          args = idK,
+          pos = Previous,
+          conts
+        }
 
 -------------------------------------------------------------------------------
 -- Parsing
@@ -231,6 +290,8 @@ data ParseEnv s t a = ParseEnv
     tokens :: ![t],
     -- The current offset in the input tokens
     offset :: !Int,
+    -- | Named productions encountered at this position
+    names :: ![Text],
     -- States to process at the current position
     states :: ![State s a t a],
     -- States to process at the next position
@@ -238,10 +299,12 @@ data ParseEnv s t a = ParseEnv
     -- | Results ready to be reported (when this position has been processed)
     results :: ![Results s a],
     -- | Computation that resets the continuation refs of productions
-    reset :: !(ST s ()),
-    -- | Named productions encountered at this position
-    names :: ![Text]
+    reset :: !(ST s ())
   }
+
+addName :: Text -> ParseEnv s t a -> ParseEnv s t a
+addName name env =
+  env {names = name : env.names}
 
 addCurrentState :: State s a t a -> ParseEnv s t a -> ParseEnv s t a
 addCurrentState state env =
@@ -259,12 +322,15 @@ addResult :: Results s a -> ParseEnv s t a -> ParseEnv s t a
 addResult result env =
   env {results = result : env.results}
 
+addReset :: ST s () -> ParseEnv s t a -> ParseEnv s t a
+addReset action env =
+  env {reset = env.reset >> action}
+
 -- | The internal parsing routine
 parseCurrentStates :: ParseEnv s t a -> ST s (Result s t a)
 parseCurrentStates env =
   case env.states of
-    [] -> do
-      env.reset
+    [] ->
       if null env.results
         then keepGoing
         else pure (Parsed env.results env.offset env.tokens keepGoing)
@@ -279,16 +345,17 @@ parseCurrentStates env =
                       expected = env.names,
                       unconsumed = env.tokens
                     }
-            state : states ->
+            state : states -> do
+              env.reset
               parseCurrentState
                 ParseEnv
                   { tokens = drop 1 env.tokens,
                     offset = env.offset + 1,
+                    names = [],
                     states,
                     nextStates = [],
                     results = [],
-                    reset = pure (),
-                    names = []
+                    reset = pure ()
                   }
                 state
     state : states -> parseCurrentState env {states} state
@@ -296,131 +363,188 @@ parseCurrentStates env =
 parseCurrentState :: ParseEnv s t a -> State s a t a -> ST s (Result s t a)
 parseCurrentState env = \case
   Final result -> parseCurrentStates (env & addResult result)
-  State pr args pos conts ->
-    case pr of
-      Prod.Terminal f p -> parseCurrentTerminal env args conts f p
-      Prod.NonTerminal rule p -> parseCurrentNonterminal env args pos conts rule p
-      Prod.Pure x -> parseCurrentPure env pos conts (args x)
-      Prod.Alts as (Prod.Pure f) ->
+  State State1 {prod, args, pos, conts} ->
+    case prod of
+      Prod.Terminal f p -> parseCurrentTerminal env f p args conts
+      Prod.NonTerminal rule p -> parseCurrentNonterminal env rule p args pos conts
+      Prod.Pure x -> parseCurrentPure env pos (runK args x) conts
+      Prod.Alts prods (Prod.Pure f) -> do
+        let args' = lmapK f args
         parseCurrentStates $
           env
-            & addCurrentStates [State a (args . f) pos conts | a <- as]
-      Prod.Alts as p -> do
-        scont' <- newConts =<< newSTRef [Cont pure p args conts]
+            & addCurrentStates
+              [ State
+                  State1
+                    { prod = p,
+                      args = args',
+                      pos,
+                      conts
+                    }
+                | p <- prods
+              ]
+      Prod.Alts prods prod1 -> do
+        conts' <- newConts =<< newSTRef [Cont idK prod1 args conts]
         parseCurrentStates $
           env
-            & addCurrentStates [State a pure Previous scont' | a <- as]
+            & addCurrentStates
+              [ State
+                  State1
+                    { prod = p,
+                      args = idK,
+                      pos = Previous,
+                      conts = conts'
+                    }
+                | p <- prods
+              ]
       Prod.Many p q -> mdo
         r <- mkRule $ pure [] <|> (:) <$> p <*> Prod.NonTerminal r (Prod.Pure id)
         parseCurrentStates $
           env
-            & addCurrentState (State (Prod.NonTerminal r q) args pos conts)
-      Prod.Named pr' n ->
+            & addCurrentState
+              ( State
+                  State1
+                    { prod = Prod.NonTerminal r q,
+                      args,
+                      pos,
+                      conts
+                    }
+              )
+      Prod.Named prod' name ->
         parseCurrentStates $
           env
-            { names = n : names env
-            }
-            & addCurrentState (State pr' args pos conts)
+            & addCurrentState
+              ( State
+                  State1
+                    { prod = prod',
+                      args,
+                      pos,
+                      conts
+                    }
+              )
+            & addName name
 
 parseCurrentTerminal ::
   ParseEnv s t a ->
-  (b -> Results s c) ->
-  Conts s a t c a ->
-  (t -> Maybe d) ->
-  ProdR s a t (d -> b) ->
+  (t -> Maybe x) ->
+  ProdR s a t (x -> y) ->
+  K s y z ->
+  Conts s a t z a ->
   ST s (Result s t a)
-parseCurrentTerminal env args scont f p =
+parseCurrentTerminal env parse prod args conts =
   parseCurrentStates $
     case maybeValue of
       Nothing -> env
-      Just value -> env & addNextState (State p (\x -> args (x value)) Previous scont)
+      Just value ->
+        env
+          & addNextState
+            ( State
+                State1
+                  { prod,
+                    args = lmapK (\f -> f value) args,
+                    pos = Previous,
+                    conts
+                  }
+            )
   where
     maybeValue =
       case tokens env of
         [] -> Nothing
-        token : _ -> f token
+        token : _ -> parse token
 
 parseCurrentNonterminal ::
   ParseEnv s t a ->
-  (b -> Results s c) ->
+  Rule s a t x ->
+  ProdR s a t (x -> y) ->
+  K s y z ->
   BirthPos ->
-  Conts s a t c a ->
-  Rule s a t d ->
-  ProdR s a t (d -> b) ->
+  Conts s a t z a ->
   ST s (Result s t a)
-parseCurrentNonterminal env args pos scont rule p = do
-  rkref <- readSTRef rule.conts
-  ks <- readSTRef rkref
-  writeSTRef rkref (Cont pure p args scont : ks)
+parseCurrentNonterminal env rule prod args pos conts = do
+  ruleContsRef <- readSTRef rule.contsRefRef
+  ruleConts <- readSTRef ruleContsRef
+  writeSTRef ruleContsRef (Cont idK prod args conts : ruleConts)
   ns <- runResults rule.nulls
   env1 <-
-    case null ks of
+    case null ruleConts of
       -- The rule has not been expanded at this position.
       True -> do
-        st' <- State rule.prod pure Current <$> newConts rkref
+        conts' <- newConts ruleContsRef
         pure $
           env
-            { reset = do
-                writeSTRef rule.conts =<< newSTRef []
-                env.reset
-            }
-            & addCurrentState st'
+            & addCurrentState
+              ( State
+                  State1
+                    { prod = rule.prod,
+                      args = idK,
+                      pos = Current,
+                      conts = conts'
+                    }
+              )
+            & addReset (resetRuleConts rule)
       -- The rule has already been expanded at this position.
       False -> pure env
   parseCurrentStates
     if null ns
       then env1
-      else env1 & addCurrentState (State p (\f -> Results (pure $ map f ns) >>= args) pos scont)
+      else
+        env1
+          & addCurrentState
+            ( State
+                State1
+                  { prod,
+                    args = pureK (\f -> map f ns) >*> args,
+                    pos,
+                    conts
+                  }
+            )
 
 parseCurrentPure ::
   ParseEnv s t a ->
   BirthPos ->
-  Conts s a t b a ->
-  (Results s b) ->
+  Results s x ->
+  Conts s a t x a ->
   ST s (Result s t a)
-parseCurrentPure env pos conts x =
+parseCurrentPure env pos xs conts =
   case pos of
     -- Skip following continuations that stem from the current position; such
     -- continuations are handled separately.
     Current -> parseCurrentStates env
     Previous -> do
       readSTRef conts.args >>= \case
-        HasBeenFollowed asref -> do
-          -- The continuation has already been followed at this position.
-          modifySTRef asref (x <>)
+        -- The continuation has already been followed at this position.
+        HasBeenFollowed xsRef -> do
+          modifySTRef xsRef (xs <>)
           parseCurrentStates env
+        -- It hasn't.
         HasntBeenFollowed -> do
-          -- It hasn't.
-          asref <- newSTRef x
-          writeSTRef conts.args $ HasBeenFollowed asref
+          xsRef <- newSTRef xs
+          writeSTRef conts.args $ HasBeenFollowed xsRef
           ks <- simplifyCont conts
-          res <- cacheResultsRef asref
+          res <- cacheResultsRef xsRef
           parseCurrentStates $
             env
-              { reset = do
-                  writeSTRef conts.args HasntBeenFollowed
-                  env.reset
-              }
               & addCurrentStates (map (contToState res) ks)
+              & addReset (writeSTRef conts.args HasntBeenFollowed)
 
 newtype Parser t a = Parser (forall s. [t] -> ST s (Result s t a))
 
 -- | Create a parser from the given grammar.
 parser :: (forall r. Grammar r (Prod r t a)) -> Parser t a
-parser g =
-  Parser \i -> do
-    s <- initialState =<< Grammar.runGrammar (fmap Prod.nonTerminal . mkRule) g
+parser grammar =
+  Parser \tokens -> do
+    prod <- Grammar.runGrammar (fmap Prod.nonTerminal . mkRule) grammar
+    state <- initialState prod
     parseCurrentState
       ParseEnv
-        { tokens = i,
+        { tokens,
           offset = 0,
+          names = [],
           states = [],
           nextStates = [],
           results = [],
-          reset = pure (),
-          names = []
+          reset = pure ()
         }
-      s
+      state
 {-# INLINE parser #-}
 
 -- | Return all parses from the result of a given parser. The result may
