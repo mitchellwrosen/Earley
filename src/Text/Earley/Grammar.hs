@@ -52,8 +52,7 @@ data Prod r t a where
   -- Error reporting.
   Named :: !(Prod r t a) -> !Text -> Prod r t a
 
--- | Match a token for which the given predicate returns @Just a@,
--- and return the @a@.
+-- | Match a token for which the given predicate returns @Just a@, and return the @a@.
 terminal :: (t -> Maybe a) -> Prod r t a
 terminal p = Terminal p (Pure id)
 
@@ -75,12 +74,13 @@ instance (Monoid a) => Monoid (Prod r t a) where
 
 instance Functor (Prod r t) where
   {-# INLINE fmap #-}
-  fmap f (Terminal b p) = Terminal b $ fmap (f .) p
-  fmap f (NonTerminal r p) = NonTerminal r $ fmap (f .) p
-  fmap f (Pure x) = Pure $ f x
-  fmap f (Alts as p) = Alts as $ fmap (f .) p
-  fmap f (Many p q) = Many p $ fmap (f .) q
-  fmap f (Named p n) = Named (fmap f p) n
+  fmap f = \case
+    Terminal b p -> Terminal b $ fmap (f .) p
+    NonTerminal r p -> NonTerminal r $ fmap (f .) p
+    Pure x -> Pure $ f x
+    Alts as p -> Alts as $ fmap (f .) p
+    Many p q -> Many p $ fmap (f .) q
+    Named p n -> Named (fmap f p) n
 
 -- | Smart constructor for alternatives.
 alts :: [Prod r t a] -> Prod r t (a -> b) -> Prod r t b
@@ -175,8 +175,7 @@ instance MonadFix (Grammar r) where
 rule :: Prod r t a -> Grammar r (Prod r t a)
 rule p = RuleBind p pure
 
--- | Run a grammar, given an action to perform on productions to be turned into
--- non-terminals.
+-- | Run a grammar, given an action to perform on productions to be turned into non-terminals.
 runGrammar ::
   forall b m r.
   (MonadFix m) =>
@@ -189,7 +188,7 @@ runGrammar r = go
     go = \case
       RuleBind p k -> do
         nt <- r p
-        go $ k nt
+        go (k nt)
       Return a -> pure a
       FixBind f k -> mdo
         a <- go (f a)

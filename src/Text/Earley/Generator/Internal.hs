@@ -10,9 +10,7 @@ import Data.STRef.Lazy
 import Text.Earley.Grammar
 
 -------------------------------------------------------------------------------
-
--- * Concrete rules and productions
-
+-- Concrete rules and productions
 -------------------------------------------------------------------------------
 
 -- | The concrete rule type that the generator uses
@@ -25,7 +23,7 @@ data Rule s r t a = Rule
 mkRule :: ProdR s r t a -> ST s (Rule s r t a)
 mkRule p = mdo
   c <- newSTRef =<< newSTRef mempty
-  computeNullsRef <- newSTRef $ do
+  computeNullsRef <- newSTRef do
     writeSTRef computeNullsRef $ return []
     ns <- unResults $ prodNulls p
     writeSTRef computeNullsRef $ return ns
@@ -94,10 +92,9 @@ instance Monoid (Results s t a) where
   mappend = (<>)
 
 -------------------------------------------------------------------------------
-
--- * States and continuations
-
+-- States and continuations
 -------------------------------------------------------------------------------
+
 data BirthPos
   = Previous
   | Current

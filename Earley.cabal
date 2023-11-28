@@ -50,6 +50,7 @@ library
     GADTs
     LambdaCase
     NamedFieldPuns
+    OverloadedRecordDot
     RankNTypes
     RecursiveDo
     ScopedTypeVariables
