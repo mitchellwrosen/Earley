@@ -56,9 +56,6 @@ instance Functor (Prod r t) where
     Named p n -> Named (fmap f p) n
   {-# INLINE fmap #-}
 
-instance (Monoid a) => Monoid (Prod s t a) where
-  mempty = pure mempty
-
 instance (Semigroup a) => Semigroup (Prod s t a) where
   (<>) = liftA2 (<>)
 
